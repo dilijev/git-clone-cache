@@ -75,14 +75,24 @@ def is_local_repo(path):
 
 
 def run_git_command(cmd, args):
-    """Run a git command and return success status"""
+    """Run a git command and return success status, streaming output to stdout/stderr"""
     info(f"Running git command: {cmd} {' '.join(args)}")
     try:
-        result = subprocess.run([cmd] + args, check=True, capture_output=True)
-        verbose(f"Command succeeded. stdout: {result.stdout}, stderr: {result.stderr}")
-        return True
-    except subprocess.CalledProcessError as e:
-        error(f"Command failed: {e}. stdout: {e.stdout}, stderr: {e.stderr}")
+        process = subprocess.Popen(
+            [cmd] + args,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+            text=True
+        )
+        process.wait()
+        if process.returncode == 0:
+            verbose("Command succeeded.")
+            return True
+        else:
+            error(f"Command failed with return code {process.returncode}")
+            return False
+    except Exception as e:
+        error(f"Command failed: {e}")
         return False
 
 

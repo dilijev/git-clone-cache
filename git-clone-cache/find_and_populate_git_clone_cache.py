@@ -10,29 +10,21 @@ import populate_git_clone_cache
 
 
 def run_populate_git_clone_cache(repo_path):
-    """Run populate_git_clone_cache for a given repo path"""
+    """Run populate_git_clone_cache for a given repo path, streaming output."""
     info_msg = f"Populating git clone cache for repo: {repo_path}"
     print(f"[find_and_populate_git_clone_cache][INFO] {info_msg}")
     try:
-        result = subprocess.run(
+        process = subprocess.Popen(
             [sys.executable, "-m", "populate_git_clone_cache", str(repo_path)],
-            capture_output=True,
-            text=True,
-            check=False
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+            text=True
         )
-        if result.returncode == 0:
+        returncode = process.wait()
+        if returncode == 0:
             print(f"[find_and_populate_git_clone_cache][INFO] Successfully populated cache for {repo_path}")
-            if result.stdout:
-                print(result.stdout, end="")
-            if result.stderr:
-                print(result.stderr, end="", file=sys.stderr)
         else:
-            error_msg = f"Failed to populate cache for {repo_path}. Return code: {result.returncode}, stderr: {result.stderr.strip()}"
-            print(f"[find_and_populate_git_clone_cache][ERROR] {error_msg}", file=sys.stderr)
-            if result.stdout:
-                print(result.stdout, end="")
-            if result.stderr:
-                print(result.stderr, end="", file=sys.stderr)
+            print(f"[find_and_populate_git_clone_cache][ERROR] Failed to populate cache for {repo_path}. Return code: {returncode}", file=sys.stderr)
     except Exception as e:
         error_msg = f"Exception while populating cache for {repo_path}: {e}"
         print(f"[find_and_populate_git_clone_cache][ERROR] {error_msg}", file=sys.stderr)
