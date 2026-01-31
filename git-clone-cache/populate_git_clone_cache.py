@@ -241,10 +241,11 @@ def main():
 
         if is_local_repo(arg):
             verbose(f"Argument is a local repo: {arg}")
-            url = get_origin_url(arg_path, find_real_git())
+            url = get_origin_url(arg_path, real_git)
             if not url:
                 error(f"WARNING: No origin remote in {arg}, skipping", log_file)
                 continue
+            source_for_clone = arg
         elif arg_path.is_dir():
             error(f"Not a git repo: {arg}", log_file)
             verbose(f"Argument is a directory but not a git repo: {arg}", log_file)
@@ -258,7 +259,7 @@ def main():
         cache_mirror = cache_dir / cache_key
         verbose(f"Cache mirror path: {cache_mirror}")
 
-        populate_cache(url, cache_mirror, find_real_git(), source_for_clone, cache_dir, log_file=log_file)
+        populate_cache(url, cache_mirror, real_git, source_for_clone, cache_dir, log_file=log_file)
 
     info("Done.", log_file)
     verbose("Script finished.", log_file)
