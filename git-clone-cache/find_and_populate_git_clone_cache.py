@@ -9,10 +9,42 @@ from pathlib import Path
 import populate_git_clone_cache
 
 
-def run_populate_git_clone_cache(repo_path):
-    """Run populate_git_clone_cache for a given repo path, streaming output."""
+VERBOSE=False
+
+
+def info(msg, log_file=None):
+    formatted = f"[find_and_populate_git_clone_cache][INFO] {msg}";
+    print(formatted)
+    if log_file:
+        log_file.write(formatted + "\n")
+
+
+def verbose(msg, log_file=None):
+    if not VERBOSE:
+        return
+
+    formatted = f"[find_and_populate_git_clone_cache][VERBOSE] {msg}";
+    print(formatted)
+    if log_file:
+        log_file.write(formatted + "\n")
+
+
+def error(msg, log_file=None):
+    formatted = f"[find_and_populate_git_clone_cache][ERROR] {msg}"
+    print(formatted, file=sys.stderr)
+    if log_file:
+        log_file.write(formatted + "\n")
+
+
+def get_log_file(cache_dir):
+    log_path = cache_dir / "find_and_populate_git_clone_cache.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    return open(log_path, "a", buffering=1)
+
+
+def run_populate_git_clone_cache(repo_path, log_file=None):
     info_msg = f"Populating git clone cache for repo: {repo_path}"
-    print(f"[find_and_populate_git_clone_cache][INFO] {info_msg}")
+    info(info_msg, log_file)
     try:
         process = subprocess.Popen(
             [sys.executable, "-m", "populate_git_clone_cache", str(repo_path)],
@@ -22,55 +54,59 @@ def run_populate_git_clone_cache(repo_path):
         )
         returncode = process.wait()
         if returncode == 0:
-            print(f"[find_and_populate_git_clone_cache][INFO] Successfully populated cache for {repo_path}")
+            info(f"Successfully populated cache for {repo_path}", log_file)
         else:
-            print(f"[find_and_populate_git_clone_cache][ERROR] Failed to populate cache for {repo_path}. Return code: {returncode}", file=sys.stderr)
+            error(f"Failed to populate cache for {repo_path}. Return code: {returncode}", log_file)
     except Exception as e:
-        error_msg = f"Exception while populating cache for {repo_path}: {e}"
-        print(f"[find_and_populate_git_clone_cache][ERROR] {error_msg}", file=sys.stderr)
+        error(f"Exception while populating cache for {repo_path}: {e}", log_file)
 
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: find-and-populate-git-cache /path/to/search", file=sys.stderr)
+        error("Usage: find-and-populate-git-cache /path/to/search")
         sys.exit(1)
 
     root_dir = Path(sys.argv[1]).resolve()
 
     if not root_dir.is_dir():
-        print(f"ERROR: Not a directory: {root_dir}", file=sys.stderr)
+        error(f"ERROR: Not a directory: {root_dir}")
         sys.exit(1)
 
-    print(f"Searching for git repos in: {root_dir}")
+    cache_dir = Path(
+        os.environ.get("GIT_CLONE_CACHE_DIR", os.path.expanduser("~/.git-clone-cache"))
+    )
+    log_file = get_log_file(cache_dir)
 
-    # Find all .git directories
+    info(f"Searching for git repos in: {root_dir}", log_file)
+
     repos = []
     for root, dirs, files in os.walk(root_dir, followlinks=False):
         if '.git' in dirs:
             found = Path(root) / '.git'
-            print(f"Found git repo: {found}")
+            info(f"Found git repo: {found}", log_file)
             repos.append(root)
-
         dirs[:] = [
             d for d in dirs
             if d not in {".git", "node_modules"}
             and not os.path.islink(os.path.join(root, d))
         ]
-
         if '.git' in dirs:
             found = Path(root) / '.git'
-            print(f"Found git repo: {found}")
+            info(f"Found git repo: {found}", log_file)
             repos.append(root)
 
     if not repos:
-        print("No git repos found", file=sys.stderr)
+        error("No git repos found", log_file)
         sys.exit(1)
 
-    print(f"Found {len(repos)} repo(s), populating cache...")
+    info(f"Found {len(repos)} repo(s), populating cache...", log_file)
 
     for repo in repos:
-        run_populate_git_clone_cache(repo)
+        run_populate_git_clone_cache(repo, log_file=log_file)
 
+    info("Done.", log_file)
+    log_file.write("Done.\n")
+    log_file.close()
 
 if __name__ == "__main__":
     main()
