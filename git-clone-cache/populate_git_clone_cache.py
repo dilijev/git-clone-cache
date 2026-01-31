@@ -9,20 +9,29 @@ from pathlib import Path
 import json
 
 
+VERBOSE=False
+
+
 def info(msg, log_file=None):
-    print(f"[populate_git_clone_cache][INFO] {msg}")
+    formatted = f"[populate_git_clone_cache][INFO] {msg}";
+    print(formatted)
     if log_file:
-        log_file.write(f"[populate_git_clone_cache][INFO] {msg}\n")
+        log_file.write(formatted + "\n")
 
 def verbose(msg, log_file=None):
-    # print(f"[populate_git_clone_cache][VERBOSE] {msg}", file=sys.stderr)
-    pass
+    if not VERBOSE:
+        return
+
+    formatted = f"[populate_git_clone_cache][VERBOSE] {msg}";
+    print(formatted)
+    if log_file:
+        log_file.write(formatted + "\n")
 
 def error(msg, log_file=None):
-    print(f"[populate_git_clone_cache][ERROR] {msg}", file=sys.stderr)
+    formatted = f"[populate_git_clone_cache][ERROR] {msg}";
+    print(formatted, file=sys.stderr)
     if log_file:
-        log_file.write(f"[populate_git_clone_cache][ERROR] {msg}\n")
-
+        log_file.write(formatted + "\n")
 
 def find_real_git():
     """Find the real git binary, skipping the wrapper at ~/bin/git"""
