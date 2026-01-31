@@ -18,6 +18,7 @@ def info(msg, log_file=None):
     if log_file:
         log_file.write(formatted + "\n")
 
+
 def verbose(msg, log_file=None):
     if not VERBOSE:
         return
@@ -27,11 +28,13 @@ def verbose(msg, log_file=None):
     if log_file:
         log_file.write(formatted + "\n")
 
+
 def error(msg, log_file=None):
     formatted = f"[populate_git_clone_cache][ERROR] {msg}";
     print(formatted, file=sys.stderr)
     if log_file:
         log_file.write(formatted + "\n")
+
 
 def find_real_git():
     """Find the real git binary, skipping the wrapper at ~/bin/git"""
