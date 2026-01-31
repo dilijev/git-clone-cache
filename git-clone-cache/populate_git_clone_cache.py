@@ -6,6 +6,7 @@ import hashlib
 import subprocess
 import shutil
 from pathlib import Path
+import json
 
 
 def info(msg):
@@ -85,15 +86,49 @@ def run_git_command(cmd, args):
         return False
 
 
-def populate_cache(url, cache_mirror, real_git, source_for_clone):
-    """Create or update a cache entry"""
+def update_directory_json(cache_dir, url, cache_key):
+    """Update directory.json mapping URL to cache_key"""
+    directory_json_path = cache_dir / "directory.json"
+    mapping = {}
+    if directory_json_path.exists():
+        try:
+            with open(directory_json_path, "r") as f:
+                mapping = json.load(f)
+        except Exception as e:
+            error(f"Failed to read directory.json: {e}")
+    # Idempotent update
+    if mapping.get(url) != cache_key:
+        mapping[url] = cache_key
+        try:
+            with open(directory_json_path, "w") as f:
+                json.dump(mapping, f, indent=2, sort_keys=True)
+            info(f"Updated directory.json for {url}")
+        except Exception as e:
+            error(f"Failed to write directory.json: {e}")
+
+
+def set_origin_url(cache_mirror, real_git, url):
+    """Set the origin URL for the mirror repo"""
+    info(f"Setting origin URL for cache mirror: {cache_mirror}")
+    # This is idempotent: setting the same URL repeatedly is safe
+    return run_git_command(
+        real_git, ["-C", str(cache_mirror), "remote", "set-url", "origin", url]
+    )
+
+
+def populate_cache(url, cache_mirror, real_git, source_for_clone, cache_dir):
+    """Create or update a cache entry and update directory.json"""
     verbose(f"populate_cache called with url={url}, cache_mirror={cache_mirror}, source_for_clone={source_for_clone}")
     if cache_mirror.exists():
         info(f"Updating: {url}")
         verbose(f"Cache mirror exists: {cache_mirror}")
-        if run_git_command(
+        updated = run_git_command(
             real_git, ["-C", str(cache_mirror), "fetch", "--all"]
-        ):
+        )
+        # Ensure origin URL is correct (idempotent)
+        set_origin_url(cache_mirror, real_git, url)
+        update_directory_json(cache_dir, url, cache_mirror.name)
+        if updated:
             verbose("  -> OK")
             return True
         else:
@@ -102,10 +137,14 @@ def populate_cache(url, cache_mirror, real_git, source_for_clone):
     else:
         info(f"Caching: {url}")
         verbose(f"Cache mirror does not exist, cloning to: {cache_mirror}")
-        if run_git_command(
+        cloned = run_git_command(
             real_git, ["clone", "--mirror", source_for_clone, str(cache_mirror)]
-        ):
+        )
+        if cloned:
             info(f"  -> {cache_mirror}")
+            # Set origin URL to the actual remote URL (idempotent)
+            set_origin_url(cache_mirror, real_git, url)
+            update_directory_json(cache_dir, url, cache_mirror.name)
             return True
         else:
             error(f"Failed to cache {url}")
@@ -167,7 +206,7 @@ def main():
         cache_mirror = cache_dir / cache_key
         verbose(f"Cache mirror path: {cache_mirror}")
 
-        populate_cache(url, cache_mirror, real_git, source_for_clone)
+        populate_cache(url, cache_mirror, real_git, source_for_clone, cache_dir)
 
     info("Done.")
     verbose("Script finished.")
