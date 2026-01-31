@@ -202,6 +202,10 @@ class Tee:
         self.stream.flush()
         self.log_file.flush()
 
+    def fileno(self):
+        # Return the fileno of the underlying stream (stdout/stderr)
+        return self.stream.fileno()
+
 
 def main():
     verbose("Script started.")
