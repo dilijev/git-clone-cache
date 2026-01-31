@@ -7,6 +7,7 @@ import subprocess
 import shutil
 from pathlib import Path
 import json
+import threading
 
 
 VERBOSE=False
@@ -89,19 +90,35 @@ def is_local_repo(path):
 
 
 def run_git_command(cmd, args, log_file=None):
-    """Run a git command and return success status, streaming output to stdout/stderr and log file"""
+    """Run a git command and return success status, streaming output to stdout/stderr and log file."""
     info_msg = f"Running git command: {cmd} {' '.join(args)}"
     info(info_msg, log_file)
     try:
-        stdout_tee = Tee(sys.stdout, log_file) if log_file else sys.stdout
-        stderr_tee = Tee(sys.stderr, log_file) if log_file else sys.stderr
         process = subprocess.Popen(
             [cmd] + args,
-            stdout=stdout_tee,
-            stderr=stderr_tee,
-            text=True
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1
         )
+
+        def stream_copy(src, dst1, dst2):
+            for line in src:
+                dst1.write(line)
+                dst1.flush()
+                if dst2:
+                    dst2.write(line)
+                    dst2.flush()
+
+        threads = []
+        threads.append(threading.Thread(target=stream_copy, args=(process.stdout, sys.stdout, log_file)))
+        threads.append(threading.Thread(target=stream_copy, args=(process.stderr, sys.stderr, log_file)))
+        for t in threads:
+            t.start()
         process.wait()
+        for t in threads:
+            t.join()
+
         if process.returncode == 0:
             verbose("Command succeeded.", log_file)
             return True
@@ -186,25 +203,6 @@ def get_log_file(cache_dir):
     # Ensure the parent directory exists
     log_path.parent.mkdir(parents=True, exist_ok=True)
     return open(log_path, "a", buffering=1)  # line-buffered
-
-
-class Tee:
-    """Tee output to both a stream and a log file."""
-    def __init__(self, stream, log_file):
-        self.stream = stream
-        self.log_file = log_file
-
-    def write(self, data):
-        self.stream.write(data)
-        self.log_file.write(data)
-
-    def flush(self):
-        self.stream.flush()
-        self.log_file.flush()
-
-    def fileno(self):
-        # Return the fileno of the underlying stream (stdout/stderr)
-        return self.stream.fileno()
 
 
 def main():
