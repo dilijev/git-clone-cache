@@ -105,7 +105,7 @@ run() {
   if [[ "${DRY_RUN:-0}" == "1" ]]; then
     log "DRY_RUN: $*"
   else
-    eval "$@"
+    "$@"
   fi
 }
 
@@ -113,21 +113,30 @@ run() {
 DIRECTORY_JSON="$CACHE_DIR/directory.json"
 
 update_directory_json() {
-    local url="$1"
-    local cache_key="$2"
-    # If jq is available, use it for robust JSON handling
-    if command -v jq >/dev/null 2>&1; then
-        if [[ ! -f "$DIRECTORY_JSON" ]]; then
-            echo '{}' > "$DIRECTORY_JSON"
-        fi
-        tmpfile=$(mktemp)
-        jq --arg url "$url" --arg key "$cache_key" \
-            '.[$url] = $key' \
-            "$DIRECTORY_JSON" > "$tmpfile" && mv "$tmpfile" "$DIRECTORY_JSON"
-    else
-        # refuse to edit directory.json without jq
-        log "WARNING: jq not found, skipping update of directory.json"
+  local url="$1"
+  local cache_key="$2"
+
+  # If jq is available, use it for robust JSON handling
+  if command -v jq >/dev/null 2>&1; then
+    if [[ ! -f "$DIRECTORY_JSON" ]]; then
+      echo '{}' > "$DIRECTORY_JSON"
     fi
+
+    local tmpfile
+    tmpfile="$(mktemp)"
+
+    if jq --arg url "$url" --arg key "$cache_key" \
+        '.[$url] = $key' \
+        "$DIRECTORY_JSON" > "$tmpfile"; then
+      mv "$tmpfile" "$DIRECTORY_JSON"
+    else
+      rm -f "$tmpfile"
+      log "WARNING: jq failed updating directory.json (left existing file unchanged)"
+    fi
+  else
+    # refuse to edit directory.json without jq
+    log "WARNING: jq not found, skipping update of directory.json"
+  fi
 }
 
 canonical_key="$(sha_key "$canonical_url")"
@@ -143,6 +152,12 @@ if [[ ! -d "$canonical_path" ]]; then
   exit 1
 fi
 
+# Optional sanity check: looks like a bare repo
+if [[ ! -d "$canonical_path/objects" ]] || [[ ! -f "$canonical_path/HEAD" ]]; then
+  log "ERROR: Canonical dir does not look like a bare git repo: $canonical_path"
+  exit 1
+fi
+
 # Safety: if canonical_path is a symlink, normalize to its real target (fine either way)
 canonical_real="$(realpath_f "$canonical_path")"
 log "Canonical realpath: $canonical_real"
@@ -154,6 +169,8 @@ for aurl in "${alias_urls[@]}"; do
   log "Alias URL: $aurl"
   log "Alias key: $alias_key"
   log "Alias path: $alias_path"
+
+  link_ok=0
 
   # If alias path exists...
   if [[ -L "$alias_path" ]]; then
@@ -167,18 +184,18 @@ for aurl in "${alias_urls[@]}"; do
     fi
 
     if [[ "$target_resolved" == "$canonical_real" ]]; then
-      log "OK: alias already points to canonical (no-op)"
-      continue
-    fi
+      log "OK: alias already points to canonical (symlink is correct)"
+      link_ok=1
+    else
+      if [[ "$FORCE" -eq 0 ]]; then
+        log "ERROR: alias exists but points elsewhere: $alias_path -> $target"
+        log "       Use --force to replace it."
+        exit 1
+      fi
 
-    if [[ "$FORCE" -eq 0 ]]; then
-      log "ERROR: alias exists but points elsewhere: $alias_path -> $target"
-      log "       Use --force to replace it."
-      exit 1
+      log "Replacing existing symlink (force): $alias_path -> $target"
+      run rm -f "$alias_path"
     fi
-
-    log "Replacing existing symlink (force): $alias_path -> $target"
-    run "rm -f \"\$alias_path\""
   elif [[ -e "$alias_path" ]]; then
     # Exists but not a symlink (file/dir)
     if [[ "$FORCE" -eq 0 ]]; then
@@ -188,21 +205,23 @@ for aurl in "${alias_urls[@]}"; do
     fi
 
     log "Removing existing path (force): $alias_path"
-    run "rm -rf \"\$alias_path\""
+    run rm -rf "$alias_path"
   fi
 
-  # Create symlink (relative within cache dir is nicer/portable)
-  log "Creating symlink: $alias_key -> $canonical_key"
-  run "ln -s \"\$canonical_key\" \"\$alias_path\""
+  if [[ "$link_ok" -eq 0 ]]; then
+    # Create symlink (relative within cache dir is nicer/portable)
+    log "Creating symlink: $alias_key -> $canonical_key"
+    run ln -s "$canonical_key" "$alias_path"
 
-  # Verify
-  if [[ "${DRY_RUN:-0}" != "1" ]]; then
-    vtarget="$(readlink "$alias_path")"
-    log "Created: $alias_path -> $vtarget"
+    # Verify
+    if [[ "${DRY_RUN:-0}" != "1" ]]; then
+      vtarget="$(readlink "$alias_path")"
+      log "Created: $alias_path -> $vtarget"
+    fi
   fi
 
   if [[ "${DRY_RUN:-0}" != "1" ]]; then
-    # Update directory.json for this alias
+    # Update directory.json for this alias (keeps existing format: url -> alias_key)
     update_directory_json "$aurl" "$alias_key"
   fi
 
@@ -210,12 +229,19 @@ for aurl in "${alias_urls[@]}"; do
   # Normalize remote name: replace :/. with -
   remote_name="$(echo "$aurl" | sed 's/[:\/.]/-/g')"
   git_dir="$canonical_path"
+
   if [[ "${DRY_RUN:-0}" != "1" ]]; then
-    if git --git-dir="$git_dir" remote | grep -qxF "$remote_name"; then
+    if git --git-dir="$git_dir" remote get-url "$remote_name" >/dev/null 2>&1; then
+      # Remote exists; ensure push disabled (idempotent)
+      git --git-dir="$git_dir" remote set-url --push "$remote_name" no-pushing >/dev/null 2>&1 || true
       log "Remote '$remote_name' already exists in $git_dir, skipping add."
     else
       log "Adding remote '$remote_name' -> $aurl in $git_dir"
-      git --git-dir="$git_dir" remote add "$remote_name" "$aurl" || log "WARNING: Could not add remote $remote_name"
+      if git --git-dir="$git_dir" remote add "$remote_name" "$aurl"; then
+        git --git-dir="$git_dir" remote set-url --push "$remote_name" no-pushing >/dev/null 2>&1 || true
+      else
+        log "WARNING: Could not add remote $remote_name"
+      fi
     fi
   else
     log "DRY_RUN: Would add remote '$remote_name' -> $aurl in $git_dir"
