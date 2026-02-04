@@ -25,7 +25,7 @@
 
 set -euo pipefail
 
-CACHE_DIR="${GIT_CLONE_CACHE_DIR:=$HOME/.git-clone-cache}"
+CACHE_DIR="${GIT_CLONE_CACHE_DIR:-$HOME/.git-clone-cache}"
 mkdir -p "$CACHE_DIR"
 
 LOG_FILE="$CACHE_DIR/git-clone-cache-alias.log"
@@ -163,8 +163,20 @@ canonical_real="$(realpath_f "$canonical_path")"
 log "Canonical realpath: $canonical_real"
 
 for aurl in "${alias_urls[@]}"; do
+  # Seatbelt: skip if alias URL exactly equals canonical URL
+  if [[ "$aurl" == "$canonical_url" ]]; then
+    log "Seatbelt: alias URL equals canonical URL, skipping: $aurl"
+    continue
+  fi
+
   alias_key="$(sha_key "$aurl")"
   alias_path="$CACHE_DIR/$alias_key"
+
+  # Seatbelt: if alias hashes to the same key, nothing to do
+  if [[ "$alias_key" == "$canonical_key" ]]; then
+    log "Seatbelt: alias key equals canonical key, skipping: $aurl"
+    continue
+  fi
 
   log "Alias URL: $aurl"
   log "Alias key: $alias_key"
@@ -199,7 +211,13 @@ for aurl in "${alias_urls[@]}"; do
   elif [[ -e "$alias_path" ]]; then
     # Exists but not a symlink (file/dir)
     if [[ "$FORCE" -eq 0 ]]; then
-      log "ERROR: alias path exists and is not a symlink: $alias_path"
+      # Helpful context to avoid accidental data loss
+      if [[ -d "$alias_path" ]]; then
+        size_hint="$(du -sh "$alias_path" 2>/dev/null | awk '{print $1}' || true)"
+        log "ERROR: alias path exists and is a directory: $alias_path (size: ${size_hint:-unknown})"
+      else
+        log "ERROR: alias path exists and is not a symlink: $alias_path"
+      fi
       log "       Refusing to overwrite. Use --force if you're sure."
       exit 1
     fi
@@ -226,8 +244,7 @@ for aurl in "${alias_urls[@]}"; do
   fi
 
   # Add alias URL as a remote in the canonical repo
-  # Normalize remote name: replace :/. with -
-  remote_name="$(echo "$aurl" | sed 's/[:\/.]/-/g')"
+  remote_name="alias-${alias_key:0:12}"
   git_dir="$canonical_path"
 
   if [[ "${DRY_RUN:-0}" != "1" ]]; then
