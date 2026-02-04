@@ -116,6 +116,11 @@ if [[ ! -d "$CACHE_MIRROR" ]]; then
         log "ERROR: Failed to clone to cache"
         exit 1
     }
+    # Set the origin remote to no-pushing
+    log "Setting origin remote to no-pushing for $CACHE_MIRROR"
+    "$REAL_GIT" --git-dir="$CACHE_MIRROR" remote set-url origin --push no-pushing || {
+        log "WARNING: Could not set origin remote to no-pushing"
+    }
 else
     # Update existing cache
     log "Updating cache mirror"
@@ -123,6 +128,11 @@ else
     if ! "$REAL_GIT" -C "$CACHE_MIRROR" fetch --all >/dev/null 2>&1; then
         log "WARNING: Failed to update cache, proceeding anyway"
     fi
+    # Ensure the origin remote is set to no-pushing
+    log "Ensuring origin remote is set to no-pushing for $CACHE_MIRROR"
+    "$REAL_GIT" --git-dir="$CACHE_MIRROR" remote set-url origin --push no-pushing || {
+        log "WARNING: Could not set origin remote to no-pushing"
+    }
 fi
 
 # Insert cache flags after "clone" in the original arg list
