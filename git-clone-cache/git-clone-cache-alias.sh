@@ -109,6 +109,27 @@ run() {
   fi
 }
 
+# Path to directory.json
+DIRECTORY_JSON="$CACHE_DIR/directory.json"
+
+update_directory_json() {
+    local url="$1"
+    local cache_key="$2"
+    # If jq is available, use it for robust JSON handling
+    if command -v jq >/dev/null 2>&1; then
+        if [[ ! -f "$DIRECTORY_JSON" ]]; then
+            echo '{}' > "$DIRECTORY_JSON"
+        fi
+        tmpfile=$(mktemp)
+        jq --arg url "$url" --arg key "$cache_key" \
+            '.[$url] = $key' \
+            "$DIRECTORY_JSON" > "$tmpfile" && mv "$tmpfile" "$DIRECTORY_JSON"
+    else
+        # refuse to edit directory.json without jq
+        log "WARNING: jq not found, skipping update of directory.json"
+    fi
+}
+
 canonical_key="$(sha_key "$canonical_url")"
 canonical_path="$CACHE_DIR/$canonical_key"
 
@@ -179,6 +200,9 @@ for aurl in "${alias_urls[@]}"; do
     vtarget="$(readlink "$alias_path")"
     log "Created: $alias_path -> $vtarget"
   fi
+
+  # Update directory.json for this alias
+  update_directory_json "$aurl" "$alias_key"
 done
 
 log "Done."
