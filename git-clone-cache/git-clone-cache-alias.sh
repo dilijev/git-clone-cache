@@ -201,8 +201,10 @@ for aurl in "${alias_urls[@]}"; do
     log "Created: $alias_path -> $vtarget"
   fi
 
-  # Update directory.json for this alias
-  update_directory_json "$aurl" "$alias_key"
+  if [[ "${DRY_RUN:-0}" != "1" ]]; then
+    # Update directory.json for this alias
+    update_directory_json "$aurl" "$alias_key"
+  fi
 
   # Add alias URL as a remote in the canonical repo
   # Normalize remote name: replace :/. with -
