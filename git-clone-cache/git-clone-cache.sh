@@ -37,6 +37,27 @@ log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [git-clone-cache] $*" | tee -a "$LOG_FILE" >&2
 }
 
+# Path to directory.json
+DIRECTORY_JSON="$CACHE_DIR/directory.json"
+
+update_directory_json() {
+    local url="$1"
+    local cache_key="$2"
+    # If jq is available, use it for robust JSON handling
+    if command -v jq >/dev/null 2>&1; then
+        if [[ ! -f "$DIRECTORY_JSON" ]]; then
+            echo '{}' > "$DIRECTORY_JSON"
+        fi
+        tmpfile=$(mktemp)
+        jq --arg url "$url" --arg key "$cache_key" \
+            '.[$url] = $key' \
+            "$DIRECTORY_JSON" > "$tmpfile" && mv "$tmpfile" "$DIRECTORY_JSON"
+    else
+        # refuse to edit directory.json without jq
+        log "WARNING: jq not found, skipping update of directory.json"
+    fi
+}
+
 # Extract URL from arguments after clone
 url=""
 skip_next=0
@@ -78,12 +99,14 @@ if [[ -z "$url" ]] || [[ -d "$url" ]] || [[ -f "$url" ]]; then
     exec "$REAL_GIT" "$@"
 fi
 
-
 # Compute stable cache key from URL
 log "Clone URL: $url"
 CACHE_KEY=$(printf '%s' "$url" | sha256sum | cut -d' ' -f1)
 log "Cache key (sha256): $CACHE_KEY"
 CACHE_MIRROR="$CACHE_DIR/$CACHE_KEY"
+
+# Update directory.json before any clone/fetch
+update_directory_json "$url" "$CACHE_KEY"
 
 # Initialize cache if missing
 if [[ ! -d "$CACHE_MIRROR" ]]; then
