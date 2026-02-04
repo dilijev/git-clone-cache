@@ -6,3 +6,4 @@
 *.zip
 out/
 *.exe
+.DS_Store
