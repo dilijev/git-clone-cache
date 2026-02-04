@@ -203,6 +203,21 @@ for aurl in "${alias_urls[@]}"; do
 
   # Update directory.json for this alias
   update_directory_json "$aurl" "$alias_key"
+
+  # Add alias URL as a remote in the canonical repo
+  # Normalize remote name: replace :/. with -
+  remote_name="$(echo "$aurl" | sed 's/[:\/.]/-/g')"
+  git_dir="$canonical_path"
+  if [[ "${DRY_RUN:-0}" != "1" ]]; then
+    if git --git-dir="$git_dir" remote | grep -qxF "$remote_name"; then
+      log "Remote '$remote_name' already exists in $git_dir, skipping add."
+    else
+      log "Adding remote '$remote_name' -> $aurl in $git_dir"
+      git --git-dir="$git_dir" remote add "$remote_name" "$aurl" || log "WARNING: Could not add remote $remote_name"
+    fi
+  else
+    log "DRY_RUN: Would add remote '$remote_name' -> $aurl in $git_dir"
+  fi
 done
 
 log "Done."
